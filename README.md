@@ -2,6 +2,7 @@ pygpiod - (c) 2014-06-12 Leif Sawyer
 
 loosely based on a script by Alex Eames http://RasPi.tv
 
+Requires RPi.GPIO: http://sourceforge.net/projects/raspberry-gpio-python
 
 This is a simple daemon-esque script that is meant to be run in the background
 at startup on a Raspberry Pi.

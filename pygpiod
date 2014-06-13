@@ -1,0 +1,85 @@
+#!/usr/bin/env python2.7
+# based on a script by Alex Eames http://RasPi.tv
+import RPi.GPIO as GPIO
+import time
+import os
+
+global timeIN18
+global timeOUT18
+
+global timeIN23
+global timeOUT23
+
+GPIO.setmode(GPIO.BCM)
+
+# GPIO 23, 22, 21 & 18 set up as inputs, pulled up to avoid false detection.
+GPIO.setup(23, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(22, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(21, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(18, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+def callback18IN(channel):
+    global timeIN18
+    timeIN18 = time.time()
+    GPIO.remove_event_detect(channel)
+    GPIO.add_event_detect(channel, GPIO.RISING, callback=callback18OUT,  bouncetime=300)
+
+def callback18OUT(channel):
+    global timeOUT18
+    timeOUT18 = time.time()
+    GPIO.remove_event_detect(channel)
+    GPIO.add_event_detect(channel, GPIO.FALLING, callback=callback18IN, bouncetime=300)
+    delta = int(timeOUT18 - timeIN18)
+    if delta >= 12:
+        os.system("/sbin/shutdown -h -P now 'System is powering off by longpress'")
+    elif delta >=7:
+        os.system("/sbin/shutdown -r now 'System is rebooting by longpress'")
+    else:
+        os.system("/usr/bin/logger -t pygpiod short-press event detected on channel " + str(channel))
+
+def callback23IN(channel):
+    global timeIN23
+    timeIN23 = time.time()
+    GPIO.remove_event_detect(channel)
+    GPIO.add_event_detect(channel, GPIO.RISING, callback=callback23OUT, bouncetime=300)
+
+def callback23OUT(channel):
+    global timeOUT23
+    timeOUT23 = time.time()
+    GPIO.remove_event_detect(channel)
+    GPIO.add_event_detect(channel, GPIO.FALLING, callback=callback23IN, bouncetime=300)
+    delta = int(timeOUT23 - timeIN23)
+    if delta >=5:
+        # the first echo wakes the screen if it is in power-saving. Note that we don't restore the backlight here.
+        os.system("echo '" + chr(27) + "[13]'>/dev/console")
+        os.system("/usr/local/sbin/WhatsMyIPv4.sh>/dev/console")
+        os.system("/usr/local/sbin/WhatsMyIPv6.sh>/dev/console")
+    else:
+        os.system("/usr/local/sbin/tftp-toggle")
+
+# now we'll the threaded callback functions
+# these will run in another thread when our events are detected
+def callback(channel):
+    # print "falling edge detected on " + str(channel)
+    logstringOK = "/usr/bin/logger -t pygpiod event detected on channel " + str(channel)
+    logstringBAD = "/usr/bin/logger -t pygpiod event detected on unexpected channel " + str(channel)
+
+    if channel == 21:
+        os.system(logstringOK)
+    elif channel == 22:
+        os.system(logstringOK)
+    else:
+        os.system(logstringBAD)
+
+#GPIO18 & 23 gets their own long-press callback
+GPIO.add_event_detect(18, GPIO.FALLING, callback=callback18IN, bouncetime=300)
+GPIO.add_event_detect(23, GPIO.FALLING, callback=callback23IN, bouncetime=300)
+
+#remaining GPIOs get a standard callback
+GPIO.add_event_detect(21, GPIO.FALLING, callback=callback, bouncetime=300)
+GPIO.add_event_detect(22, GPIO.FALLING, callback=callback, bouncetime=300)
+
+while True:
+        time.sleep(0.03)
+
+GPIO.cleanup()           # clean up GPIO on normal exit

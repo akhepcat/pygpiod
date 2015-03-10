@@ -55,7 +55,7 @@ def callback23OUT(channel):
         os.system("/usr/local/sbin/WhatsMyIPv4.sh>/dev/console")
         os.system("/usr/local/sbin/WhatsMyIPv6.sh>/dev/console")
     else:
-        os.system("/usr/local/sbin/tftp-toggle")
+        os.system("/usr/local/sbin/tft-toggle")
 
 # now we'll the threaded callback functions
 # these will run in another thread when our events are detected

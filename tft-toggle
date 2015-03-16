@@ -1,7 +1,83 @@
 #!/bin/bash
 
-PIN=$(ls -d /sys/devices/platform/bcm2708_spi.0/spi_master/spi0/spi0.1/stmpe-gpio.0/gpio/gpiochip*)
-PIN=${PIN:+252}
+# list of possible GPIO pins.  These can change based on HW or SW revisions, so we keep track
+GPIO_PINS="508 252"
+
+# Directories to check to make sure we have the GPIO support available
+GPIO_DIRS="/sys/devices/platform/bcm2708_spi.0/spi_master/spi0/spi0.1/stmpe-gpio.0/gpio/ /sys/class/spi_master/spi0/spi0.1/stmpe-gpio/gpio/ /sys/devices/soc/20204000.spi/spi_master/spi0/spi0.1/stmpe-gpio/gpio/"
+
+
+available() {
+	NOT_FOUND=1
+	for d in ${GPIO_DIRS}
+	do
+		if [ -d ${d} ]
+		then
+			NOT_FOUND=0
+		fi
+	done
+	return ${NOT_FOUND}
+}
+
+find_gpio() {
+	GPIO_NOT_FOUND=1
+
+	for p in ${GPIO_PINS}
+	do
+		if [ -w /sys/class/gpio/export ]
+		then
+			if [ ! -r /sys/class/gpio/gpio${p}/device/modalias ]
+			then
+				echo ${p} > /sys/class/gpio/export 2>/dev/null
+			fi
+			
+			grep --binary-files=text -U -q stmpe-gpio /sys/class/gpio/gpio${p}/device/modalias >/dev/null 2>&1
+			if [ $? -eq 0 ]
+			then
+				GPIO_NOT_FOUND=0
+				PIN=${p}
+			fi
+		else
+			echo "Can't add GPIO pin ${PIN} to exports"
+		fi
+	done
+
+	return ${GPIO_NOT_FOUND}
+}
+
+toggle()
+{
+	NOT_TOGGLED=1
+
+	if [ -w /sys/class/gpio/gpio${PIN}/direction ]
+	then
+		if [ ${FORCE:-0} -gt 0 ]
+		then
+			echo 'out' > /sys/class/gpio/gpio${PIN}/direction
+			echo "$STATE" > /sys/class/gpio/gpio${PIN}/value
+		else
+			echo 'in' > /sys/class/gpio/gpio${PIN}/direction
+			STATUS=$(cat /sys/class/gpio/gpio${PIN}/value)
+
+			echo 'out' > /sys/class/gpio/gpio${PIN}/direction
+
+			if [ ${STATUS:-0} -ne 0 ]
+			then
+				#off
+				echo '0' > /sys/class/gpio/gpio${PIN}/value
+			else
+				#on
+				echo '1' > /sys/class/gpio/gpio${PIN}/value
+			fi
+		fi
+		NOT_TOGGLED=0
+	else
+		echo "Can't change the state of GPIO ${PIN}"
+	fi
+
+	return ${NOT_TOGGLED}
+}
+
 
 if [ -n "${1}" -o -z "${0##*-on}" -o -z "${0##*-off}" ]
 then
@@ -12,52 +88,4 @@ then
    FORCE=1
 fi
 
-if [ -n "${PIN}" ]
-then
-if [ -f /sys/class/gpio/export ]
-then
-  if [ ! -r /sys/class/gpio/gpio${PIN}/uevent ]
-  then
-    echo ${PIN} > /sys/class/gpio/export
-  fi
-
-  if [ -r /sys/class/gpio/gpio${PIN}/direction ]
-  then
-    DIR=$(cat /sys/class/gpio/gpio${PIN}/direction)
-
-    if [ -n "${DIR##in}" ]
-    then
-      echo 'in' > /sys/class/gpio/gpio${PIN}/direction
-    fi
-
-    if [ -f /sys/class/gpio/gpio${PIN}/value ]
-    then
-      STATUS=$(cat /sys/class/gpio/gpio${PIN}/value)
-      echo 'out' > /sys/class/gpio/gpio${PIN}/direction
-
-      if [ ${FORCE:-0} -gt 0 ]
-      then
-        echo "$STATE" > /sys/class/gpio/gpio${PIN}/value
-      else
-        if [ $STATUS -gt 0 ]
-          then
-	  #off
-	  echo '0' > /sys/class/gpio/gpio${PIN}/value
-        else
-	  #on
-	  echo '1' > /sys/class/gpio/gpio${PIN}/value
-	fi
-      fi
-
-    else
-      echo "Can't read the state of GPIO ${PIN}"
-    fi
-  else
-    echo "Can't read the direction of GPIO ${PIN}"
-  fi
-else
-  echo "no GPIO pins to export"
-fi
-else
-  echo "Can't find the GPIO pin, is the device working?"
-fi
+test available && find_gpio && toggle 

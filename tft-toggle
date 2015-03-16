@@ -1,4 +1,7 @@
 #!/bin/bash
+DO_RETURN=${SHLVL}
+PROG="${0##*/}"
+PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
 # list of possible GPIO pins.  These can change based on HW or SW revisions, so we keep track
 GPIO_PINS="508 252"
@@ -6,11 +9,25 @@ GPIO_PINS="508 252"
 # Directories to check to make sure we have the GPIO support available
 GPIO_DIRS="/sys/devices/platform/bcm2708_spi.0/spi_master/spi0/spi0.1/stmpe-gpio.0/gpio/ /sys/class/spi_master/spi0/spi0.1/stmpe-gpio/gpio/ /sys/devices/soc/20204000.spi/spi_master/spi0/spi0.1/stmpe-gpio/gpio/"
 
+# DEBUG="yes"
+#############################
+
+do_exit() {
+        STATUS=${1:-0}
+        REASON="${2}"
+
+        [[ -n "${REASON}" ]] && echo "${REASON}"
+
+        [[ ${DO_RETURN:-0} -eq 1 ]] && return ${STATUS} || exit ${STATUS}
+}
+
 
 available() {
 	NOT_FOUND=1
 	for d in ${GPIO_DIRS}
 	do
+		[[ -n "${DEBUG}" ]] && echo "available:DIR(${d}) exists?"
+
 		if [ -d ${d} ]
 		then
 			NOT_FOUND=0
@@ -24,6 +41,7 @@ find_gpio() {
 
 	for p in ${GPIO_PINS}
 	do
+		[[ -n "${DEBUG}" ]] && echo "available:GPIO(${p}) exists?"
 		if [ -w /sys/class/gpio/export ]
 		then
 			if [ ! -r /sys/class/gpio/gpio${p}/device/modalias ]
@@ -55,24 +73,20 @@ toggle()
 		then
 			echo 'out' > /sys/class/gpio/gpio${PIN}/direction
 			echo "$STATE" > /sys/class/gpio/gpio${PIN}/value
+			[[ -n "${DEBUG}" ]] && echo "toggle:tft(${STATE})"
 		else
 			echo 'in' > /sys/class/gpio/gpio${PIN}/direction
-			STATUS=$(cat /sys/class/gpio/gpio${PIN}/value)
+			STATE=$(cat /sys/class/gpio/gpio${PIN}/value)
 
 			echo 'out' > /sys/class/gpio/gpio${PIN}/direction
 
-			if [ ${STATUS:-0} -ne 0 ]
-			then
-				#off
-				echo '0' > /sys/class/gpio/gpio${PIN}/value
-			else
-				#on
-				echo '1' > /sys/class/gpio/gpio${PIN}/value
-			fi
+			#invert the state to flip it
+			STATE=$((1-STATE))
+
+			[[ -n "${DEBUG}" ]] && echo "toggle:tft(${STATE})"
+			echo ${STATE} > /sys/class/gpio/gpio${PIN}/value
 		fi
 		NOT_TOGGLED=0
-	else
-		echo "Can't change the state of GPIO ${PIN}"
 	fi
 
 	return ${NOT_TOGGLED}
@@ -88,4 +102,7 @@ then
    FORCE=1
 fi
 
-test available && find_gpio && toggle 
+available || do_exit 1 "Can't determine GPIO for stmpe device"
+find_gpio || do_exit 1 "Can't locate an available GPIO pin for fbtft"
+toggle || do_exit 1 "Unable to toggle the tft"
+

@@ -3,7 +3,7 @@ DO_RETURN=${SHLVL}
 PROG="${0##*/}"
 PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
 
-# list of possible GPIO pins.  These can change based on HW or SW revisions, so we keep track
+# Legacy list of possible GPIO pins.  These can change based on HW or SW revisions, so we keep track
 GPIO_PINS="508 252"
 
 # Directories to check to make sure we have the GPIO support available
@@ -63,7 +63,21 @@ find_gpio() {
 	return ${GPIO_NOT_FOUND}
 }
 
-toggle()
+smtpe_toggle()
+{
+	# This is the new-fangled way of doing things.  Much better than GPIO twiddling
+	NOT_TOGGLED=1
+	STATE=$(cat /sys/class/backlight/soc\:backlight/bl_power)
+	STATE=$((1-STATE))
+	echo "${STATE}" > /sys/class/backlight/soc\:backlight/bl_power
+	if [ "$(cat /sys/class/backlight/soc\:backlight/bl_power)" -eq ${STATE} ]
+	then
+		NOT_TOGGLED=0
+	fi
+	return ${NOT_TOGGLED}
+}
+
+gpio_toggle()
 {
 	NOT_TOGGLED=1
 
@@ -102,7 +116,11 @@ then
    FORCE=1
 fi
 
-available || do_exit 1 "Can't determine GPIO for stmpe device"
-find_gpio || do_exit 1 "Can't locate an available GPIO pin for fbtft"
-toggle || do_exit 1 "Unable to toggle the tft"
-
+if [ -r /sys/class/backlight/soc\:backlight/bl_power ]
+then
+	smtpe_toggle
+else
+	available || do_exit 1 "Can't determine GPIO for stmpe device"
+	find_gpio || do_exit 1 "Can't locate an available GPIO pin for fbtft"
+	toggle || do_exit 1 "Unable to toggle the tft"
+fi
